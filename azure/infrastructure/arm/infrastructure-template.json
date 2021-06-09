@@ -1,0 +1,715 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "tenantId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the ID of the Azure tenant to deploy resources into."
+            }
+        },
+        "subscriptionId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the ID of the Azure subscription to deploy resources into."
+            }
+        },
+        "servicesResourceGroup": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the name of the resource group for tosca infrastructure VMs and services."
+            }
+        },
+        "clientResourceGroup": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the name of the resource group for tosca client VMs."
+            }
+        },
+        "sqlAdministratorLogin": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the username for the SQL admin account."
+            }
+        },
+        "sqlAdministratorPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Specifies the password for the SQL admin account."
+            }
+        },
+        "sqlUserLogin": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the username for the default database user created during the deployment."
+            }
+        },
+        "sqlUserPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Specifies the password for the default database user created during the deployment."
+            }
+        },
+        "toscaDatabaseName": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the name of the database used for tosca."
+            }
+        },
+        "authDatabaseName": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the name of the database used by the authentication service."
+            }
+        },
+        "sqlDbTier": {
+            "type": "string",
+            "metadata": {
+                "description": "The tier or edition of the SKU, see https://azure.microsoft.com/en-us/pricing/details/sql-database/ or run az sql db list-editions"
+            }
+        },
+        "sqlDbsku": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the database SKU, see https://azure.microsoft.com/en-us/pricing/details/sql-database/ or run az sql db list-editions"
+            }
+        },
+        "location": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the name of an Azure region to deploy resources into."
+            }
+        },
+        "sqlServerMaxSizeBytes": {
+            "type": "int",
+            "metadata": {
+                "description": "Specifies the the maximum size of the database expressed in bytes."
+            }
+        },
+        "sqlServerName": {
+            "type": "string",
+            "metadata": {
+                "description": "Specifies the the name of the database server."
+            }
+        },
+        "sqlPrivateEndpointName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the resource name of the SQL server private endpoint."
+            }
+        },
+        "virtualNetworkName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the the name of a virtual network shared by all created resources."
+            }
+
+        },
+        "storageAccountName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the the name of a storage account used to support deployments."
+            }
+
+        },
+        "imageGalleryName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Specifies the the name of a Shared Image Gallery for Tosca cloud deployment images."
+            }
+        }
+    },
+    "variables": {
+        "subscriptionId": "[subscription().subscriptionId]",
+        "resourceGroupName": "[resourceGroup().name]",
+        "privateEndpointTemplateName": "[concat('PrivateEndpoint-', variables('privateEndpointNestedTemplateId'))]",
+        "deploymentTemplateApi": "2018-05-01",
+        "privateEndpointId": "[resourceId(variables('subscriptionId'), variables('resourceGroupName'), 'Microsoft.Network/privateEndpoints', parameters('sqlPrivateEndpointName'))]",
+        "privateEndpointVnetId": "[resourceId(variables('subscriptionId'), variables('resourceGroupName'), 'Microsoft.Network/virtualNetworks', parameters('virtualNetworkName'))]",
+        "privateEndpointSubnetResourceId": "[resourceId(variables('subscriptionId'), variables('resourceGroupName'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), variables('servicesSubnetName'))]",
+        "privateLinkServiceId": "[concat('/subscriptions/', variables('subscriptionId'), '/resourceGroups/', variables('resourceGroupName'),'/providers/Microsoft.Sql/servers/', parameters('sqlServerName'))]",
+        "privateEndpointDnsRecordUniqueId": "[guid(resourceId(variables('subscriptionId'), variables('resourceGroupName'), 'Microsoft.Network/privateEndpoints', parameters('sqlPrivateEndpointName')))]",
+        "privateEndpointNestedTemplateId": "[concat('pe-', variables('privateEndpointDnsRecordUniqueId'))]",
+        "servicesSubnetName": "services",
+        "servicesSubnetNSGName": "[concat(parameters('virtualNetworkName'), '-', variables('servicesSubnetName'), '-nsg')]",
+        "clientSubnetName": "clients",
+        "clientSubnetNSGName": "[concat(parameters('virtualNetworkName'), '-', variables('clientSubnetName'), '-nsg')]",
+        "allowAzureIps":false,
+        "privateLinkServiceName": "toscacloud-link",
+        "internalDnsFqdn": "privatelink.database.windows.net"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2020-05-01",
+            "name": "[variables('clientSubnetNSGName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [],
+            "properties": {
+                "securityRules": [ ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2020-05-01",
+            "name": "[variables('servicesSubnetNSGName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [],
+            "properties": {
+                "securityRules": []
+            }
+        },        
+        {
+            "name": "[parameters('virtualNetworkName')]",
+            "type": "Microsoft.Network/VirtualNetworks",
+            "apiVersion": "2019-09-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('clientSubnetNSGName'))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('servicesSubnetNSGName'))]"
+            ],
+            "tags": {},
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.3.0.0/16"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "default",
+                        "properties": {
+                            "addressPrefix": "10.3.0.0/24"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2019-04-01",
+            "type": "Microsoft.Network/virtualNetworks/subnets",
+            "name": "[concat(parameters('virtualNetworkName'), '/', variables('clientSubnetName'))]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/VirtualNetworks/', parameters('virtualNetworkName'))]"
+            ],
+            "properties": {
+                "privateEndpointNetworkPolicies": "Disabled",
+                "provisioningState": "Succeeded",
+                "addressPrefix": "10.3.32.0/19",
+                "networkSecurityGroup": {
+                    "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('clientSubnetNSGName'))]"
+                },                
+                "serviceEndpoints": [
+                    {
+                        "provisioningState": "Succeeded",
+                        "service": "Microsoft.Sql",
+                        "locations": [
+                            "[parameters('location')]"
+                        ]
+                    },
+                    {
+                        "service": "Microsoft.Storage",
+                        "locations": [
+                            "[parameters('location')]"
+                        ]
+                    }
+                ],
+                "delegations": [],
+                "privateLinkServiceNetworkPolicies": "Enabled"
+            }
+        },
+        {
+            "apiVersion": "2019-04-01",
+            "type": "Microsoft.Network/virtualNetworks/subnets",
+            "name": "[concat(parameters('virtualNetworkName'), '/', variables('servicesSubnetName'))]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/VirtualNetworks/', parameters('virtualNetworkName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('clientSubnetName'))]"
+            ],
+            "properties": {
+                "privateEndpointNetworkPolicies": "Disabled",
+                "provisioningState": "Succeeded",
+                "addressPrefix": "10.3.1.0/24",
+                "networkSecurityGroup": {
+                    "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('servicesSubnetNSGName'))]"
+                },                
+                "serviceEndpoints": [
+                    {
+                        "provisioningState": "Succeeded",
+                        "service": "Microsoft.Sql",
+                        "locations": [
+                            "[parameters('location')]"
+                        ]
+                    },
+                    {
+                        "service": "Microsoft.Storage",
+                        "locations": [
+                            "[parameters('location')]"
+                        ]
+                    }
+                ],
+                "delegations": [],
+                "privateLinkServiceNetworkPolicies": "Enabled"
+            }
+        },
+        {
+            "name": "[parameters('storageAccountName')]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('servicesSubnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('clientSubnetName'))]"
+            ],
+            "location": "[parameters('location')]",
+            "properties": {
+                "accessTier": "Hot",
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": "true",
+                "allowBlobPublicAccess": "true",
+                "networkAcls": {
+                    "bypass": "AzureServices",
+                    "defaultAction": "Deny",
+                    "ipRules": [],
+                    "virtualNetworkRules": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('servicesSubnetName'))]"
+                        },
+                        {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('clientSubnetName'))]"
+
+                        }
+                    ]
+                }
+            },
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "StorageV2",
+            "resources": [
+                {
+                    "type": "blobServices/containers",
+                    "apiVersion": "2019-06-01",
+                    "name": "[concat('default/', 'setup')]",
+                    "dependsOn": [
+                        "[parameters('storageAccountName')]"
+                    ]
+                },
+                {
+                    "type": "blobServices/containers",
+                    "apiVersion": "2019-06-01",
+                    "name": "[concat('default/', 'deployment')]",
+                    "dependsOn": [
+                        "[parameters('storageAccountName')]"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Compute/galleries",
+            "name": "[parameters('imageGalleryName')]",
+            "apiVersion": "2019-03-01",
+            "location": "[parameters('location')]"
+        },
+        {
+            "apiVersion": "2015-05-01-preview",
+            "type": "Microsoft.Sql/servers",
+            "location": "[parameters('location')]",
+            "name": "[parameters('sqlServerName')]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/VirtualNetworks/', parameters('virtualNetworkName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('servicesSubnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('clientSubnetName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/', parameters('storageAccountName'))]"
+            ],
+            "properties": {
+                "administratorLogin": "[parameters('sqlAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('sqlAdministratorPassword')]",
+                "version": "12.0",
+                "minimalTlsVersion": "1.2"
+            },
+            "identity": "[json('null')]",
+            "resources": [
+                {
+                    "apiVersion": "2018-06-01-preview",
+                    "type": "databases",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('sqlServerName'))]"
+                    ],
+                    "location": "[parameters('location')]",
+                    "name": "[parameters('toscaDatabaseName')]",
+                    "properties": {
+                        "collation": "SQL_Latin1_General_CP1_CI_AS",
+                        "maxSizeBytes": "[parameters('sqlServerMaxSizeBytes')]"
+                    },
+                    "sku": {
+                        "name": "[parameters('sqlDbsku')]",
+                        "tier": "[parameters('sqlDbTier')]"
+                    }
+                },
+                {
+                    "apiVersion": "2018-06-01-preview",
+                    "type": "databases",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('sqlServerName'))]"
+                    ],
+                    "location": "[parameters('location')]",
+                    "name": "[parameters('authDatabaseName')]",
+                    "properties": {
+                        "collation": "SQL_Latin1_General_CP1_CI_AS",
+                        "maxSizeBytes": "[parameters('sqlServerMaxSizeBytes')]"
+                    },
+                    "sku": {
+                        "name": "[parameters('sqlDbsku')]",
+                        "tier": "[parameters('sqlDbTier')]"
+                    }
+                },
+                {
+                    "type": "Microsoft.Sql/servers/virtualNetworkRules",
+                    "apiVersion": "2015-05-01-preview",
+                    "name": "[concat(parameters('sqlServerName'), '/', variables('clientSubnetName'), 'Subnet')]",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('sqlServerName'))]",
+                        "[concat('Microsoft.Network/VirtualNetworks/', parameters('virtualNetworkName'))]"
+                    ],
+                    "properties": {
+                        "virtualNetworkSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('clientSubnetName'))]",
+                        "ignoreMissingVnetServiceEndpoint": false
+                    }
+                },
+                {
+                    "type": "Microsoft.Sql/servers/virtualNetworkRules",
+                    "apiVersion": "2015-05-01-preview",
+                    "name": "[concat(parameters('sqlServerName'), '/', variables('servicesSubnetName'), 'Subnet')]",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('sqlServerName'))]",
+                        "[concat('Microsoft.Network/VirtualNetworks/', parameters('virtualNetworkName'))]"
+                    ],
+                    "properties": {
+                        "virtualNetworkSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('servicesSubnetName'))]",
+                        "ignoreMissingVnetServiceEndpoint": false
+                    }
+                },
+                {
+                    "condition": "[variables('allowAzureIps')]",
+                    "apiVersion": "2014-04-01-preview",
+                    "type": "firewallrules",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', parameters('sqlServerName'))]"
+                    ],
+                    "location": "[parameters('location')]",
+                    "name": "AllowAllWindowsAzureIps",
+                    "properties": {
+                        "endIpAddress": "0.0.0.0",
+                        "startIpAddress": "0.0.0.0"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "[variables('deploymentTemplateApi')]",
+            "name": "[variables('privateEndpointTemplateName')]",
+            "dependsOn": [
+                "[resourceId(variables('subscriptionId'), variables('resourceGroupName'), 'Microsoft.Sql/servers/databases/', parameters('sqlServerName'), parameters('toscaDatabaseName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets/', parameters('virtualNetworkName'), variables('servicesSubnetName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "privateEndpointName": {
+                        "value": "[parameters('sqlPrivateEndpointName')]"
+                    },
+                    "privateEndpointConnectionId": {
+                        "value": ""
+                    },
+                    "privateEndpointConnectionName": {
+                        "value": "[variables('privateLinkServiceName')]"
+                    },
+                    "privateEndpointId": {
+                        "value": "[variables('privateEndpointId')]"
+                    },
+                    "privateEndpointApiVersion": {
+                        "value": "2019-04-01"
+                    },
+                    "privateLinkServiceId": {
+                        "value": "[variables('privateLinkServiceId')]"
+                    },
+                    "groupId": {
+                        "value": "SqlServer"
+                    },
+                    "subnetId": {
+                        "value": "[variables('privateEndpointSubnetResourceId')]"
+                    },
+                    "location": {
+                        "value": "[parameters('location')]"
+                    },
+                    "tags": {
+                        "value": {}
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "privateEndpointName": {
+                            "type": "string"
+                        },
+                        "privateEndpointConnectionId": {
+                            "type": "string"
+                        },
+                        "privateEndpointConnectionName": {
+                            "type": "string"
+                        },
+                        "privateLinkServiceId": {
+                            "type": "string"
+                        },
+                        "privateEndpointId": {
+                            "type": "string"
+                        },
+                        "privateEndpointApiVersion": {
+                            "type": "string"
+                        },
+                        "groupId": {
+                            "type": "string"
+                        },
+                        "subnetId": {
+                            "type": "string"
+                        },
+                        "location": {
+                            "type": "string"
+                        },
+                        "tags": {
+                            "type": "object"
+                        }
+                    },
+                    "resources": [
+                        {
+                            "apiVersion": "2019-04-01",
+                            "name": "[parameters('privateEndpointName')]",
+                            "type": "Microsoft.Network/privateEndpoints",
+                            "location": "[parameters('location')]",
+                            "properties": {
+                                "privateLinkServiceConnections": [
+                                    {
+                                        "id": "[parameters('privateEndpointConnectionId')]",
+                                        "name": "[parameters('privateEndpointConnectionName')]",
+                                        "properties": {
+                                            "privateLinkServiceId": "[parameters('privateLinkServiceId')]",
+                                            "groupIds": [
+                                                "[parameters('groupId')]"
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "manualPrivateLinkServiceConnections": [],
+                                "subnet": {
+                                    "id": "[parameters('subnetId')]"
+                                }
+                            },
+                            "tags": "[parameters('tags')]"
+                        }
+                    ],
+                    "outputs": {
+                        "networkInterfaceId": {
+                            "value": "[reference(parameters('privateEndpointId'),parameters('privateEndpointApiVersion')).networkInterfaces[0].id]",
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "subscriptionId": "[variables('subscriptionId')]",
+            "resourceGroup": "[variables('resourceGroupName')]"
+        },
+        {
+            "type": "Microsoft.Network/privateDnsZones",
+            "apiVersion": "2018-09-01",
+            "name": "[variables('internalDnsFqdn')]",
+            "location": "global",
+            "dependsOn": [
+                "[variables('privateEndpointTemplateName')]"
+            ],
+            "tags": {},
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+            "apiVersion": "2018-09-01",
+            "name": "[concat(variables('internalDnsFqdn'), '/', uniqueString(variables('privateEndpointVnetId')))]",
+            "location": "global",
+            "dependsOn": [
+                "[variables('internalDnsFqdn')]",
+                "[variables('privateEndpointTemplateName')]"
+            ],
+            "properties": {
+                "virtualNetwork": {
+                    "id": "[variables('privateEndpointVnetId')]"
+                },
+                "registrationEnabled": false
+            }
+        },
+        {
+            "apiVersion": "[variables('deploymentTemplateApi')]",
+            "name": "[concat('EndpointDnsRecords-', variables('privateEndpointDnsRecordUniqueId'))]",
+            "type": "Microsoft.Resources/deployments",
+            "dependsOn": [
+                "[variables('internalDnsFqdn')]",
+                "[variables('privateEndpointTemplateName')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "privateDnsName": {
+                        "value": "[variables('internalDnsFqdn')]"
+                    },
+                    "privateEndpointNicResourceId": {
+                        "value": "[reference(concat('Microsoft.Resources/deployments/', variables('privateEndpointTemplateName'))).outputs.networkInterfaceId.value]"
+                    },
+                    "uniqueId": {
+                        "value": "[variables('privateEndpointDnsRecordUniqueId')]"
+                    },
+                    "existingRecords": {
+                        "value": {}
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "privateDnsName": {
+                            "type": "string"
+                        },
+                        "privateEndpointNicResourceId": {
+                            "type": "string"
+                        },
+                        "uniqueId": {
+                            "type": "string"
+                        },
+                        "existingRecords": {
+                            "type": "object"
+                        }
+                    },
+                    "resources": [
+                        {
+                            "apiVersion": "2017-05-10",
+                            "name": "[concat('NicDnsRecords-', parameters('uniqueId'))]",
+                            "type": "Microsoft.Resources/deployments",
+                            "properties": {
+                                "mode": "Incremental",
+                                "expressionEvaluationOptions": {
+                                    "scope": "inner"
+                                },
+                                "parameters": {
+                                    "privateDnsName": {
+                                        "value": "[parameters('privateDnsName')]"
+                                    },
+                                    "uniqueId": {
+                                        "value": "[parameters('uniqueId')]"
+                                    },
+                                    "ipConfigurations": {
+                                        "value": "[reference(parameters('privateEndpointNicResourceId'), '2019-07-01').ipConfigurations]"
+                                    },
+                                    "existingRecords": {
+                                        "value": "[parameters('existingRecords')]"
+                                    }
+                                },
+                                "template": {
+                                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                                    "contentVersion": "1.0.0.0",
+                                    "parameters": {
+                                        "privateDnsName": {
+                                            "type": "string"
+                                        },
+                                        "ipConfigurations": {
+                                            "type": "array"
+                                        },
+                                        "uniqueId": {
+                                            "type": "string"
+                                        },
+                                        "existingRecords": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "resources": [
+                                        {
+                                            "apiVersion": "2017-05-10",
+                                            "name": "[concat('DnsRecords-', copyIndex(),'-', parameters('uniqueId'))]",
+                                            "type": "Microsoft.Resources/deployments",
+                                            "properties": {
+                                                "mode": "Incremental",
+                                                "expressionEvaluationOptions": {
+                                                    "scope": "inner"
+                                                },
+                                                "parameters": {
+                                                    "privateDnsName": {
+                                                        "value": "[parameters('privateDnsName')]"
+                                                    },
+                                                    "ipConfig": {
+                                                        "value": "[parameters('ipConfigurations')[copyIndex()]]"
+                                                    },
+                                                    "existingRecords": {
+                                                        "value": "[parameters('existingRecords')]"
+                                                    }
+                                                },
+                                                "template": {
+                                                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                                                    "contentVersion": "1.0.0.0",
+                                                    "parameters": {
+                                                        "privateDnsName": {
+                                                            "type": "string"
+                                                        },
+                                                        "ipConfig": {
+                                                            "type": "object"
+                                                        },
+                                                        "existingRecords": {
+                                                            "type": "object"
+                                                        }
+                                                    },
+                                                    "resources": [
+                                                        {
+                                                            "type": "Microsoft.Network/privateDnsZones/A",
+                                                            "name": "[concat(parameters('privateDnsName'),'/', split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0])]",
+                                                            "location": "global",
+                                                            "apiVersion": "2018-09-01",
+                                                            "properties": {
+                                                                "aRecords": "[concat(if(contains(parameters('existingRecords'), split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]), parameters('existingRecords')[split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]].aRecords, json('[]')), json(concat('[{\"ipv4Address\":\"', parameters('ipConfig').properties.privateIPAddress,'\"}]')))]",
+                                                                "ttl": "[if(contains(parameters('existingRecords'), split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]), parameters('existingRecords')[split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]].ttl, 3600)]"
+                                                            },
+                                                            "copy": {
+                                                                "name": "fqdnCopy",
+                                                                "count": "[length(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns)]"
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "copy": {
+                                                "name": "ipConfigCopy",
+                                                "count": "[length(parameters('ipConfigurations'))]"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}

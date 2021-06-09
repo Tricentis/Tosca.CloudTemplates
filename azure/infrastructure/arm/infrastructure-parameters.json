@@ -1,0 +1,63 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "subscriptionId": {
+            "value": ""
+        },
+        "tenantId": {
+            "value": ""
+        },
+        "location": {
+            "value": ""
+        },
+        "servicesResourceGroup": {
+            "value": ""
+        },
+        "clientResourceGroup": {
+            "value": ""
+        },
+        "virtualNetworkName": {
+            "value": "toscacloud-vnet"
+        },
+        "storageAccountName": {
+            "value": "toscacloudsa"
+        },
+        "imageGalleryName": {
+            "value": "toscacloudgallery"
+        },
+        "sqlServerName": {
+            "value": "toscacloud-sqlserver"
+        },
+        "toscaDatabaseName": {
+            "value": "toscadb"
+        },
+        "authDatabaseName": {
+            "value": "authdb"
+        },
+        "sqlPrivateEndpointName": {
+            "value": "toscacloud-sql-ep"
+        },
+        "sqlAdministratorLogin": {
+            "value": ""
+        },
+        "sqlAdministratorPassword": {
+            "value": ""
+        },
+        "sqlUserLogin": {
+            "value": ""
+        },
+        "sqlUserPassword": {
+            "value": ""
+        },
+        "sqlDbTier": {
+            "value": "Standard"
+        },
+        "sqlDbsku": {
+            "value": "S1"
+        },
+        "sqlServerMaxSizeBytes": {
+            "value": 268435456000
+        }
+    }
+}

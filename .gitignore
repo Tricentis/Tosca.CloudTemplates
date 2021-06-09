@@ -1,0 +1,8 @@
+.vscode/*
+templates-custom/*
+
+# terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+.terraform.lock*

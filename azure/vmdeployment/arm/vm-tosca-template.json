@@ -1,0 +1,251 @@
+{
+   "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+   "contentVersion":"1.0.0.0",
+   "parameters":{
+      "tenantId": {
+         "type": "string",
+         "defaultValue": "",
+         "metadata": {
+               "description": "Specifies the ID of the azure subscription for the deployment."
+         }
+      },
+      "clientsResourceGroup": {
+         "type": "string",
+         "defaultValue": "",
+         "metadata": {
+               "description": "Specifies the name of a resource group for the deployment."
+         }
+      },
+      "servicesResourceGroup": {
+         "type": "string",
+         "defaultValue": "",
+         "metadata": {
+               "description": "Specifies the name of the Tricentis cloud services resource group."
+         }
+      },
+      "adminUserName":{
+         "type":"String"
+      },
+      "adminPassword":{
+         "type":"securestring"
+      },
+      "location":{
+         "type":"string"
+      },
+      "vmSize":{
+         "type":"string"
+      },
+      "vmName":{
+         "type":"string"
+      },
+      "virtualNetworkName":{
+         "type":"String",
+         "metadata":{
+            "description":"Specifies the name of a virtual network the resource will deployed to."
+         }
+      },
+      "SubnetName":{
+         "type":"String",
+         "metadata":{
+            "description":"Specifies the name of the subnet the resource will deployed to."
+         }
+      },
+      "imageGalleryName":{
+         "type":"string",
+         "metadata":{
+            "description":"Specifies the name of a shared image gallery containing the image to deploy."
+         }
+      },
+      "imageName":{
+         "type":"string",
+         "metadata":{
+            "description":"Specifies the name of the image to deploy."
+         }
+      },
+      "imageVersion":{
+         "type":"string",
+         "metadata":{
+            "description":"Specifies the version of the image to deploy."
+         }
+      },
+      "deploymentScriptExecution":{
+         "type": "string",
+         "defaultValue":"",
+         "metadata":{
+            "description":"Configuration script command to execute."
+         }
+      },
+      "tocaServerUri":{
+         "type": "string",
+         "defaultValue":"",
+         "metadata":{
+            "description":"Tosca Server FQDN. Only needed when deploying client VMs."
+         }
+      },
+      "databaseUri":{
+         "type": "string",
+         "defaultValue":"",
+         "metadata":{
+            "description":"FQDN of the tosca database."
+         }
+      }
+   },
+   "variables":{
+      "publicIPAddressType":"Static",
+      "publicDnsName":"[toLower(parameters('vmName'))]",
+      "nicName":"[concat(parameters('vmName'),'-nic')]",
+      "publicIPAddressName":"[concat(parameters('vmName'),'-ip')]"
+   },
+   "resources":[
+      {
+         "condition": "[equals(parameters('imageName'),'ToscaCommander')]",
+         "apiVersion": "2020-06-01",
+         "type": "Microsoft.Resources/deployments",
+         "name": "pid-0aea04d9-176e-4d23-afc4-dfc4afd8b03e",
+         "properties": {
+            "mode": "Incremental",
+            "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "resources": []
+            }
+         }
+      },
+      {
+         "condition": "[equals(parameters('imageName'),'DexAgent')]",
+         "apiVersion": "2020-06-01",
+         "type": "Microsoft.Resources/deployments",
+         "name": "pid-81157b24-3f22-4b29-9481-14b2c2c3ce4b",
+         "properties": {
+            "mode": "Incremental",
+            "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "resources": []
+            }
+         }
+      },
+      {
+         "condition": "[equals(parameters('imageName'),'ToscaServer')]",
+         "apiVersion": "2020-06-01",
+         "type": "Microsoft.Resources/deployments",
+         "name": "pid-f986e2c1-1611-44e8-9a38-c48610f2a883",
+         "properties": {
+            "mode": "Incremental",
+            "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "resources": []
+            }
+         }
+      },
+      {
+         "apiVersion":"2020-05-01",
+         "type":"Microsoft.Network/publicIPAddresses",
+         "name":"[variables('publicIPAddressName')]",
+         "location":"[parameters('location')]",
+         "properties":{
+            "publicIPAllocationMethod":"[variables('publicIPAddressType')]",
+            "dnsSettings":{
+               "domainNameLabel":"[variables('publicDnsName')]"
+            }
+         }
+      },
+      {
+         "apiVersion":"2020-05-01",
+         "type":"Microsoft.Network/networkInterfaces",
+         "name":"[variables('nicName')]",
+         "location":"[parameters('location')]",
+         "dependsOn":[
+            "[ResourceId('Microsoft.Network/publicIPAddresses/', variables('publicIPAddressName'))]"
+         ],
+         "properties":{
+            "ipConfigurations":[
+               {
+                  "name":"ipconfig1",
+                  "properties":{
+                     "privateIPAllocationMethod":"Dynamic",
+                     "publicIPAddress":{
+                        "id":"[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPAddressName'))]"
+                     },
+                     "subnet":{
+                        "id":"[resourceId(parameters('servicesResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('SubnetName'))]"
+                     }
+                  }
+               }
+            ]
+         }
+      },
+      {
+         "apiVersion":"2020-06-01",
+         "type":"Microsoft.Compute/virtualMachines",
+         "name":"[parameters('vmName')]",
+         "location":"[parameters('location')]",
+         "dependsOn":[
+            "[ResourceId('Microsoft.Network/networkInterfaces/', variables('nicName'))]"
+         ],
+         "properties":{
+            "hardwareProfile":{
+               "vmSize":"[parameters('vmSize')]"
+            },
+            "osProfile":{
+               "computername":"[parameters('vmName')]",
+               "adminUsername":"[parameters('adminUsername')]",
+               "adminPassword":"[parameters('adminPassword')]",
+               "windowsConfiguration": {
+                  "enableAutomaticUpdates": true,
+                  "provisionVmAgent": true,
+                  "patchSettings": {
+                        "patchMode": "AutomaticByOS"
+                  }
+               }
+            },
+            "diagnosticsProfile": {
+               "bootDiagnostics": {
+                  "enabled": true
+               }
+            },
+             "storageProfile":{
+               "imageReference": {
+                  "id": "[resourceId('Microsoft.Compute/galleries/images/versions', parameters('imageGalleryName'),parameters('imageName'), parameters('imageVersion'))]"
+               },
+               "osDisk":{
+                  "name":"[concat(parameters('vmName'),'-osdisk')]",
+                  "createOption":"FromImage",
+                  "managedDisk":{
+                     "storageAccountType":"Premium_LRS"
+                  }
+               }
+            },
+            "networkProfile":{
+               "networkInterfaces":[
+                  {
+                     "id":"[resourceId('Microsoft.Network/networkInterfaces',variables('nicName'))]"
+                  }
+               ]
+            }
+         }
+      },
+      {
+         "type": "Microsoft.Compute/virtualMachines/extensions",
+         "apiVersion": "2019-07-01",
+         "name": "[concat(parameters('vmName'),'/', 'ConfigureVM')]",
+         "location": "[parameters('location')]",
+         "dependsOn": [
+               "[ResourceId('Microsoft.Compute/virtualMachines/',parameters('vmName'))]"
+         ],
+         "properties": {
+            "publisher": "Microsoft.Compute",
+            "type": "CustomScriptExtension",
+            "typeHandlerVersion": "1.7",
+            "autoUpgradeMinorVersion":true,
+            "settings": {
+               "fileUris": [ ]
+            },
+            "protectedSettings": {
+               "commandToExecute": "[parameters('deploymentScriptExecution')]"
+            }
+         }
+      }
+   ]
+}

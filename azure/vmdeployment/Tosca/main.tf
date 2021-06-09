@@ -1,0 +1,20 @@
+module "virtualmachine" {
+  source                       = "../../../modules/azure-toscacloud-vm"
+  subscriptionId               = var.subscriptionId
+  tenantId                     = var.tenantId
+  location                     = var.location
+  resource_group_name          = var.resource_group_name
+  vm_prefix                    = var.vm_prefix
+  size                         = var.size
+  installation_type            = var.installation_type
+  services_resource_group_name = var.services_resource_group_name
+  subnet_id                    = var.subnet_id
+  shared_image_gallery_name    = var.shared_image_gallery_name
+  image_version                = var.image_version
+  admin_username               = var.admin_username
+  admin_password               = var.admin_password
+  enable_automatic_updates     = var.enable_automatic_updates
+  postdeploy_script_path       = var.postdeploy_script_path
+  toscaserver_uri              = var.toscaserver_uri
+  database_fqdn                = var.database_fqdn
+}

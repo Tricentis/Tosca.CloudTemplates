@@ -1,0 +1,212 @@
+{
+    "variables": {
+        "install_user": "packer",
+
+        "installers_dir": "{{ template_dir }}\\..\\..\\installers",
+        "tosca_setup_type": "{{env `tosca_setup_type`}}",
+        "tosca_setup_path": "{{env `tosca_setup_path`}}",
+        "toscaserver_setup_path": "{{env `toscaserver_setup_path`}}",
+        "toscaserver_patch_path": "{{env `toscaserver_patch_path`}}",
+        "tosca_postdeploy_path": "C:\\ProgramData\\ToscaPostDeploy",
+        "image_version": "{{env `IMAGE_VERSION`}}",
+
+        "azure_client_id": "{{env `AZURE_CLIENT_ID`}}",
+        "azure_client_secret": "{{env `AZURE_CLIENT_SECRET`}}",
+        "azure_region": "{{env `AZURE_REGION`}}",
+        "azure_subscription_id": "{{env `AZURE_SUBSCRIPTION_ID`}}",
+        "azure_tenant_id": "{{env `AZURE_TENANT_ID`}}",
+        "azure_object_id": "{{env `AZURE_OBJECT_ID`}}",
+        "azure_temp_resource_group_name": "{{env `AZURE_TEMP_RESOURCE_GROUP_NAME`}}",
+        "azure_virtual_network_name": "{{env `AZURE_VIRTUAL_NETWORK_NAME`}}",
+        "azure_virtual_network_resource_group_name": "{{env `AZURE_VIRTUAL_NETWORK_RESOURCE_GROUP_NAME`}}",
+        "azure_virtual_network_subnet_name": "{{env `AZURE_VIRTUAL_NETWORK_SUBNET_NAME`}}",
+        "azure_private_virtual_network_with_public_ip": "{{env `AZURE_PRIVATE_VIRTUAL_NETWORK_WITH_PUBLIC_IP`}}",
+        "azure_vm_size": "Standard_DS4_v2",
+        "azure_gallery_name": "{{env `AZURE_GALLERY_NAME`}}",
+        "azure_gallery_resource_group": "{{env `AZURE_GALLERY_RESOURCE_GROUP`}}",
+        "azure_gallery_target_image_name": "{{env `AZURE_GALLERY_TARGET_IMAGE_NAME`}}",
+
+        "aws_access_key": "",
+        "aws_secret_key": ""
+    },
+    "sensitive-variables": ["azure_client_id","azure_client_secret","aws_access_key","aws_secret_key"],
+    "builders": [
+        {
+            "type": "azure-arm",
+            "client_id": "{{user `azure_client_id`}}",
+            "client_secret": "{{user `azure_client_secret`}}",
+            "subscription_id": "{{user `azure_subscription_id`}}",
+            "object_id": "{{user `azure_object_id`}}",
+            "tenant_id": "{{user `azure_tenant_id`}}",
+            "os_disk_size_gb": "127",
+            "vm_size": "{{user `azure_vm_size`}}",
+            "build_resource_group_name": "{{user `azure_temp_resource_group_name`}}",
+            "virtual_network_name": "{{user `azure_virtual_network_name`}}",
+            "virtual_network_resource_group_name": "{{user `azure_virtual_network_resource_group_name`}}",
+            "virtual_network_subnet_name": "{{user `azure_virtual_network_subnet_name`}}",
+            "private_virtual_network_with_public_ip": "{{user `azure_private_virtual_network_with_public_ip`}}",
+            "os_type": "Windows",
+            "image_publisher": "MicrosoftWindowsServer",
+            "image_offer": "WindowsServer",
+            "image_sku": "2016-datacenter-gensecond",
+            "communicator": "winrm",
+            "winrm_use_ssl": "true",
+            "winrm_insecure": "true",
+            "winrm_username": "{{user `install_user`}}",
+            "shared_image_gallery_timeout": "120m",
+            "shared_image_gallery_destination": {
+                "resource_group": "{{user `azure_gallery_resource_group`}}",
+                "gallery_name": "{{user `azure_gallery_name`}}",
+                "image_name": "{{user `azure_gallery_target_image_name`}}",
+                "image_version": "{{user `image_version`}}",
+                "replication_regions": ["westeurope"]
+            },
+            "managed_image_name": "{{user `azure_gallery_target_image_name`}}",
+            "managed_image_resource_group_name": "{{user `azure_temp_resource_group_name`}}",
+            "managed_image_storage_account_type": "Premium_LRS"
+        },
+        {
+            "type": "amazon-ebs",
+            "access_key": "{{user `aws_access_key`}}",
+            "secret_key": "{{user `aws_secret_key`}}",
+            "region": "eu-central-1",
+
+            "source_ami_filter": {
+                "filters": {
+                  "virtualization-type": "hvm",
+                  "name": "Windows_Server-2016-English-Full-Base*",
+                  "root-device-type": "ebs"
+                },
+                "owners": ["amazon"],
+                "most_recent": true
+            },
+
+            "instance_type": "t2.large",
+            "force_deregister": "true",
+            "force_delete_snapshot": "true",
+            "shutdown_behavior": "terminate",
+            "run_tags": {
+                "Base_AMI_Name": "{{ .SourceAMIName }}",
+                "Name": "packer-toscacloud-{{ user `tosca_setup_type` }}-win16",
+                "OS": "Windows",
+                "Version": "{{user `image_version`}}"
+            },
+
+            "communicator":"winrm",
+            "winrm_use_ssl": "true",
+            "winrm_insecure": "true",
+            "winrm_username": "Administrator",
+            "winrm_port": "5986",
+            "winrm_timeout": "15m",
+            "user_data_file": "{{ user `installers_dir` }}\\AWS-Packer-bootstrap.txt",
+            "ami_name": "toscacloudtemplates_{{ user `tosca_setup_type` }}_{{ user `image_version` }}",
+            "associate_public_ip_address":true,
+            "tags": {
+                "Environment":"toscacloud_template",
+                "Base_AMI_Name": "{{ .SourceAMIName }}",
+                "Version": "{{ user `image_version` }}"
+            }
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "powershell",
+            "scripts": [
+                "{{ user `installers_dir` }}\\Initialize-VM.ps1",
+                "{{ user `installers_dir` }}\\Update-TLSSettings.ps1",
+                "{{ user `installers_dir` }}\\Install-Net48.ps1",
+                "{{ user `installers_dir` }}\\Configure-Firewall.ps1",
+                "{{ user `installers_dir` }}\\Configure-FirewallServer.ps1",
+                "{{ user `installers_dir` }}\\Install-PowershellCore.ps1"
+            ]
+        },
+        {
+            "type": "windows-restart",
+            "restart_timeout": "10m"
+        },
+        {
+            "type": "windows-update"
+        },
+        {
+            "type": "windows-restart",
+            "restart_timeout": "10m"
+        },
+        {
+            "type": "file",
+            "sources": [
+                "{{ user `installers_dir` }}\\PostDeploy-Tosca.ps1", 
+                "{{ user `installers_dir` }}\\PostDeploy-ToscaDEX.ps1", 
+                "{{ user `installers_dir` }}\\PostDeploy-ToscaServerAzure.ps1", 
+                "{{ user `installers_dir` }}\\PostDeploy-ToscaServerAWS.ps1", 
+                "{{ user `installers_dir` }}\\PostDeploy-ToscaServerConfig.ps1", 
+                "{{ user `installers_dir` }}\\PostDeploy-ToscaServerSelfSigned.ps1",
+                "{{ user `installers_dir` }}\\Install-DevopsAgent.ps1",
+                "{{ user `installers_dir` }}\\Import-AwsRdsRootCert.ps1"],
+            "destination": "{{ user `tosca_postdeploy_path` }}\\"
+        },
+        {
+            "type": "powershell",
+            "environment_vars": [
+                "tosca_setup_path={{ user `tosca_setup_path` }}", "tosca_setup_type={{ user `tosca_setup_type` }}"
+            ],
+            "scripts": [
+                "{{ user `installers_dir` }}\\Install-Tosca.ps1"
+            ]
+        },
+        {
+            "type": "windows-restart",
+            "restart_timeout": "10m"
+        },
+        {
+            "type": "powershell",
+            "only": ["azure-arm"],
+            "scripts": [
+                "{{ user `installers_dir` }}\\List-InstalledSoftware.ps1",
+                "{{ user `installers_dir` }}\\Finalize-VMServer.ps1"
+            ]
+        },        
+        {
+            "type": "powershell",
+            "only": ["azure-arm"],
+            "inline": [
+                "Remove-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Setup\\SysPrepExternal\\Generalize' -Name '*'"
+            ]
+        },
+        {
+            "type": "windows-restart",
+            "only": ["azure-arm"],
+            "restart_timeout": "10m"
+        },
+        {
+            "type": "powershell",
+            "only": ["azure-arm"],
+            "scripts": [
+                "{{ user `installers_dir` }}\\Sysprep-Image.ps1"
+            ]
+        },
+        {
+            "type": "powershell",
+            "only": ["amazon-ebs"],
+            "scripts": [
+                "{{ user `installers_dir` }}\\Import-AwsRdsRootCert.ps1"
+            ]
+        },
+        {
+            "type": "powershell",
+            "only": ["amazon-ebs"],
+            "inline": [
+              "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\SendWindowsIsReady.ps1 -Schedule",
+              "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\InitializeInstance.ps1 -Schedule",
+              "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\SysprepInstance.ps1 -NoShutdown"
+            ]
+        }
+    ],
+    "post-processors": [
+        [
+            {
+            "strip_path": true,
+            "type": "manifest"
+            }
+        ]
+    ]
+}
